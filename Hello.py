@@ -1,51 +1,52 @@
-# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import streamlit as st
-from streamlit.logger import get_logger
+import json
+import os
+import base64
+from zipfile import ZipFile
+import tempfile
 
-LOGGER = get_logger(__name__)
+# Step 1: Read the query parameters
+query_params = st.experimental_get_query_params()
+serialized_project = query_params.get('project', [None])[0]
 
+# This function will parse the serialized project data and create a ZIP file
+def create_zip_from_serialized_data(serialized_data):
+    # Step 2: Parse the serialized data
+    project_data = json.loads(serialized_data)
 
-def run():
-    st.set_page_config(
-        page_title="Hello",
-        page_icon="👋",
+    # Step 3: Create files and folders
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        for path, content in project_data.items():
+            # Make sure the folder structure exists
+            os.makedirs(os.path.join(tmpdirname, os.path.dirname(path)), exist_ok=True)
+            # Write the file content
+            with open(os.path.join(tmpdirname, path), 'w') as file:
+                file.write(content)
+
+        # Step 4: Compress to ZIP
+        zip_path = os.path.join(tmpdirname, 'project.zip')
+        with ZipFile(zip_path, 'w') as zipf:
+            for root, dirs, files in os.walk(tmpdirname):
+                for file in files:
+                    zipf.write(os.path.join(root, file), 
+                               os.path.relpath(os.path.join(root, file), 
+                               os.path.join(tmpdirname, '..')))
+
+        # Read the created ZIP file and encode it to Base64
+        with open(zip_path, 'rb') as zipf:
+            encoded_zip = base64.b64encode(zipf.read()).decode()
+
+    return encoded_zip
+
+# Step 5: Serve the ZIP file
+if serialized_project:
+    zip_base64 = create_zip_from_serialized_data(serialized_project)
+    st.download_button(
+        label="Download ZIP",
+        data=base64.b64decode(zip_base64),
+        file_name="project.zip",
+        mime="application/zip"
     )
 
-    st.write("# Welcome to Streamlit! 👋")
-
-    st.sidebar.success("Select a demo above.")
-
-    st.markdown(
-        """
-        Streamlit is an open-source app framework built specifically for
-        Machine Learning and Data Science projects.
-        **👈 Select a demo from the sidebar** to see some examples
-        of what Streamlit can do!
-        ### Want to learn more?
-        - Check out [streamlit.io](https://streamlit.io)
-        - Jump into our [documentation](https://docs.streamlit.io)
-        - Ask a question in our [community
-          forums](https://discuss.streamlit.io)
-        ### See more complex demos
-        - Use a neural net to [analyze the Udacity Self-driving Car Image
-          Dataset](https://github.com/streamlit/demo-self-driving)
-        - Explore a [New York City rideshare dataset](https://github.com/streamlit/demo-uber-nyc-pickups)
-    """
-    )
-
-
-if __name__ == "__main__":
-    run()
+# Instructions for the user
+st.write("Please provide the serialized project as a query parameter named 'project'.")
